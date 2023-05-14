@@ -14,6 +14,24 @@ using std::cerr;
 using std::ifstream;
 using std::stringstream;
 
+
+/*
+ * Cache_init - initialize the Cache
+ * all input parameters are set (by the main) as declared in the trace file
+ * return 0 on success, otherwise (init failure) return <0
+ */
+int  Cache_init(unsigned MemCyc, unsigned BSize, unsigned L1Size, unsigned L2Size, unsigned L1Cyc,unsigned L2Cyc,
+                unsigned L1Assoc, unsigned L2Assoc, unsigned WrAlloc);
+
+
+void Cache_Access(char operation, unsigned address);
+
+/*
+ * Cache_GetStats: Return the simulator stats
+ */
+void Cache_GetStats(double * L1MissRate, double * L2MissRate, double * avgAccTime);
+
+
 int main(int argc, char **argv) {
 
 	if (argc < 19) {
@@ -63,7 +81,13 @@ int main(int argc, char **argv) {
 		}
 	}
 
-	while (getline(file, line)) {
+    if (Cache_init(MemCyc, BSize, L1Size, L2Size, L1Cyc, L2Cyc, L1Assoc, L2Assoc, WrAlloc)<0){
+        cerr << "Error in Init" <<endl;
+        return 0;
+    }
+
+
+    while (getline(file, line)) {
 
 		stringstream ss(line);
 		string address;
@@ -88,13 +112,15 @@ int main(int argc, char **argv) {
 		// DEBUG - remove this line
 		cout << " (dec) " << num << endl;
 
-	}
+        Cache_Access(operation, num);
 
-	//todo: add functions
+	}
 
 	double L1MissRate;
 	double L2MissRate;
 	double avgAccTime;
+
+    Cache_GetStats(&L1MissRate, &L2MissRate, &avgAccTime);
 
 	printf("L1miss=%.03f ", L1MissRate);
 	printf("L2miss=%.03f ", L2MissRate);
@@ -102,3 +128,5 @@ int main(int argc, char **argv) {
 
 	return 0;
 }
+
+
