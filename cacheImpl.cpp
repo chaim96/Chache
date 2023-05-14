@@ -32,6 +32,7 @@ class CacheTable{
     unsigned Cycles;
 
     vector <unsigned> validBit;
+    vector <unsigned> DirtyBit;
     vector <unsigned> Tag;
     vector <pair<unsigned, unsigned>> BlockRange;
 
@@ -39,7 +40,7 @@ class CacheTable{
 
 public:
     CacheTable() = default;
-    CacheTable(unsigned numEntries, unsigned Ways, unsigned Cycles): numEntries(numEntries), Ways(Ways), Cycles(Cycles){
+    CacheTable(unsigned BSize, unsigned numEntries, unsigned Ways, unsigned Cycles): numEntries(numEntries), Ways(Ways), Cycles(Cycles){
         //initiate vectors
         for (int i = 0; i < numEntries; ++i) {
             validBit.push_back(0);
@@ -47,6 +48,10 @@ public:
             pair<unsigned, unsigned> p = {0, 0};
             BlockRange.push_back(p);
         }
+
+        //todo: calc tag
+
+        //initiate stats
         stats.MissRate =0;
         stats.accTime=0;
         stats.numOfAcc=0;
@@ -97,10 +102,19 @@ void Cache::Cache_initiate(unsigned MemCyc, unsigned BSize, unsigned L1Size, uns
                            unsigned L1Assoc, unsigned L2Assoc, unsigned WrAlloc){
     this->MemCyc = MemCyc;
     this->BSize = BSize;
-    this->Allocate = Allocate;
+    this->Allocate = WrAlloc;
 
-    this->L1 = CacheTable(L1Size, L1Cyc, L1Assoc);
-    this->L2 = CacheTable(L2Size, L2Cyc, L2Assoc);
+    //calculate the number of entries in each cache
+    unsigned num_blocks1 = L1Size/BSize;
+    unsigned num_blocks2 = L2Size/BSize;
+
+
+
+    this->L1 = CacheTable(BSize, num_blocks1, L1Cyc, L1Assoc);
+    this->L2 = CacheTable(BSize, num_blocks2, L2Cyc, L2Assoc);
+
+
+
 };
 
 /**********************************************
