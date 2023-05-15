@@ -101,7 +101,7 @@ int CacheTable::searchInCache(unsigned address)
     {
         if(Tag[set] == tag && validBit[set] == 1)
         {
-            Counter[set]++;
+            Counter[set]++; // TODO: update the counter method
             return set;
         }
         set += numEntries/Ways;
@@ -117,7 +117,7 @@ int CacheTable::findLRU(unsigned address)
     int minSet = set;
     for (int i=0; i<Ways; i++)
     {
-        if(Counter[set] < min)
+        if(validBit[set] == 1 && Counter[set] < min)
         {
            minSet = set;
         }
@@ -154,6 +154,7 @@ bool CacheTable::write(unsigned address)
         return true;
     }
     stats.numOfMiss++;
+    return false;
 }
 
 
@@ -217,7 +218,7 @@ bool Cache::readFromCache(unsigned address)
         L2.read(address);
     }
 }
-//TODO:
+//TODO: insert disk actions
 
 
 bool Cache::writeToCache(unsigned address)
