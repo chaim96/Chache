@@ -4,7 +4,6 @@
 #include <iostream>
 #include <fstream>
 #include <sstream>
-#include "cacheImpl.cpp"
 
 using std::FILE;
 using std::string;

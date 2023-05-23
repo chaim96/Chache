@@ -1,7 +1,7 @@
 # 046267 Computer Architecture - Winter 20/21 - HW #2
 
 cacheSim: cacheSim.cpp
-	g++ -o cacheSim cacheSim.cpp cacheImpl.cpp
+	g++ -o cacheSim cacheSim.cpp cacheImplement.cpp
 
 .PHONY: clean
 clean:
