@@ -140,7 +140,7 @@ unsigned CacheTable::calcSet(unsigned address) {
     if (numSets == 1) return 0;
     unsigned mask = (1 << (unsigned) log2(numSets)) - 1;
     mask = mask << (unsigned) log2(BSize);
-    return (mask & address) >> (unsigned) log2(BSize);
+    return ((mask & address) >> (unsigned) log2(BSize));
 }
 
 
@@ -247,7 +247,7 @@ void CacheTable::bringFromLower(unsigned address, Entry *oldBlock) {
     Entries[index]->validBit = 1;
     Entries[index]->address = address;
     Entries[index]->DirtyBit = false;
-
+    Tag[index] = tag;
 }
 
 
@@ -312,15 +312,16 @@ void
 Cache::Cache_initiate(unsigned MemCyc, unsigned BSize, unsigned L1Size, unsigned L2Size, unsigned L1Cyc, unsigned L2Cyc,
                       unsigned L1Assoc, unsigned L2Assoc, unsigned WrAlloc) {
     this->MemCyc = MemCyc;
-    this->BSize = BSize;
+    this->BSize = pow(2,BSize);
     this->Allocate = static_cast<Alloc>(WrAlloc);
 
-    //calculate the number of entries in each cache
-    unsigned num_blocks1 = L1Size / BSize;
-    unsigned num_blocks2 = L2Size / BSize;
 
-    this->L1 = CacheTable(BSize, num_blocks1, L1Assoc, L1Cyc, Allocate);
-    this->L2 = CacheTable(BSize, num_blocks2, L2Assoc, L2Cyc, Allocate);
+    //calculate the number of entries in each cache
+    unsigned num_blocks1 = pow(2,L1Size) / this->BSize;
+    unsigned num_blocks2 = pow(2,L2Size) / this->BSize;
+
+    this->L1 = CacheTable(this->BSize, num_blocks1, L1Assoc, L1Cyc, Allocate);
+    this->L2 = CacheTable(this->BSize, num_blocks2, L2Assoc, L2Cyc, Allocate);
 };
 
 
@@ -353,13 +354,13 @@ void Cache::writeToCache(unsigned int address) {
     if (Allocate == WRITE_ALLOCATE) {
         //search in L1
         L1.stats.numOfAcc++;
-        if (L1.searchInCache(address)) {
+        if (L1.read(address)) {
             L1.write(address);
         } else {
             L1.stats.numOfMiss++;
             L2.stats.numOfAcc++;
             //search L2
-            if (!L2.searchInCache(address)) {
+            if (!L2.read(address)) {
                 L2.stats.numOfMiss++;
                 L2.bringFromLower(address, oldBlock);
                 Snoop(oldBlock);
@@ -371,12 +372,12 @@ void Cache::writeToCache(unsigned int address) {
         }
     } else {
         L1.stats.numOfAcc++;
-        if (L1.searchInCache(address)) {
+        if (L1.read(address)) {
             L1.write(address);
         } else {
             L1.stats.numOfMiss++;
             L2.stats.numOfAcc++;
-            if (L2.searchInCache(address))
+            if (L2.read(address))
                 L2.write(address);
             else
                 L2.stats.numOfMiss++;
