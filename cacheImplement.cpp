@@ -82,7 +82,7 @@ public:
         numSets = numEntries / this->Ways;
 
         for (unsigned i = 0; i < numSets; ++i) {
-            for (unsigned j = 0; j < Ways; ++j) {
+            for (unsigned j = 0; j < this->Ways; ++j) {
                 Counter[i + j] = j;
             }
         }
@@ -94,7 +94,6 @@ public:
         stats.numOfAcc = 0;
     }
 
-    //int updateCacheEmptyEntry(unsigned address);
 
     int searchInCache(unsigned address);
 
@@ -118,8 +117,8 @@ public:
 
 
 bool CacheTable::read(unsigned address) {
-    unsigned set = searchInCache(address);
-    if (set != -1) {
+    unsigned index = searchInCache(address);
+    if (index != -1) {
         return true;
     }
     return false;
@@ -127,9 +126,9 @@ bool CacheTable::read(unsigned address) {
 
 
 bool CacheTable::write(unsigned address) {
-    unsigned set = searchInCache(address);
-    if (set != -1) {
-        Entries[set]->DirtyBit = 1;
+    unsigned index = searchInCache(address);
+    if (index != -1) {
+        Entries[index]->DirtyBit = 1;
         return true;
     }
     return false;
@@ -147,31 +146,12 @@ unsigned CacheTable::calcSet(unsigned address) {
 unsigned CacheTable::calcTag(unsigned address) {
     return address >> ((unsigned) log2(numSets) + (unsigned) log2(BSize));
 }
-/*
-//insert new block to cache to Empty Entry
-int CacheTable::updateCacheEmptyEntry(unsigned address) {
-    unsigned tag = calcTag(address);
-    unsigned set = calcSet(address);
-    unsigned index = set;
 
-    //try to find empty entry
-    for (unsigned i = 0; i < Ways; i++) {
-        if (Tag[index] == tag && Entries[index]->validBit == 0) {
-            CountUpdate(i, set);
-            Entries[index]->validBit = 1;
-            Entries[index]->address = address;
-            return index;
-        }
-        index += numSets;
-    }
-    return -1;
-}*/
 
 int CacheTable::searchInCache(unsigned address) {
     unsigned tag = calcTag(address);
     unsigned set = calcSet(address);
     unsigned index = set;
-
     for (unsigned i = 0; i < Ways; i++) {
         if ((Tag[index] == tag) && Entries[index]->validBit == 1) {
             CountUpdate(i, set);
@@ -187,12 +167,13 @@ int CacheTable::searchInCache(unsigned address) {
  * the algorithm is based on Lecture's notes.
  */
 void CacheTable::CountUpdate(unsigned way, unsigned set) {
-    unsigned x = Counter[way + set];
-    Counter[way + set] = Ways - 1;
+    unsigned x = Counter[way*numSets + set]; //TODO: added *numSets
+    Counter[way*numSets + set] = Ways - 1;
     for (unsigned i = 0; i < Ways; ++i) {
-        if (i != way && Counter[i + set] > x) Counter[i + set]--;
+        if (i != way && Counter[i*numSets + set] > x) Counter[i*numSets + set]--;
     }
 }
+
 
 unsigned CacheTable::LRUfindMin(unsigned address, unsigned *victimWay) {
     unsigned set = calcSet(address);
@@ -202,6 +183,7 @@ unsigned CacheTable::LRUfindMin(unsigned address, unsigned *victimWay) {
     for (unsigned i = 0; i < Ways; i++) {
         if (Entries[set]->validBit == 1 && Counter[set] < minVal) {
             minEntry = set;
+            minVal = Counter[set];
             *victimWay = i;
         }
         set += numSets;
@@ -209,7 +191,7 @@ unsigned CacheTable::LRUfindMin(unsigned address, unsigned *victimWay) {
     return minEntry;
 }
 
-
+// TODO: go over with Shai
 void CacheTable::bringFromLower(unsigned address, Entry *oldBlock) {
     unsigned tag = calcTag(address);
     unsigned set = calcSet(address);
@@ -220,7 +202,7 @@ void CacheTable::bringFromLower(unsigned address, Entry *oldBlock) {
 
     //try to find empty entry
     for (unsigned i = 0; i < Ways; i++) {
-        if (Tag[index] == tag && Entries[index]->validBit == 0) {
+        if (Entries[index]->validBit == 0) { //TODO: Tag[index] == tag && (was part of if)
             is_empty = true;
             entryWay = i;
             break;
@@ -238,10 +220,6 @@ void CacheTable::bringFromLower(unsigned address, Entry *oldBlock) {
     oldBlock->validBit = Entries[index]->validBit;
     oldBlock->address = Entries[index]->address;
 
-    //remove old entry
-    if (Entries[index]->validBit)
-        Evict(Entries[index]->address);
-
     //update to new entry
     CountUpdate(entryWay, set);
     Entries[index]->validBit = 1;
@@ -254,9 +232,6 @@ void CacheTable::bringFromLower(unsigned address, Entry *oldBlock) {
 void CacheTable::Evict(unsigned address) {
     int index = searchInCache(address);
     if (index != -1) {
-        /*if (!Entries[index].DirtyBit){
-            //write back to mem
-        }*/
         Entries[index]->validBit = 0;
     }
 }
@@ -332,6 +307,11 @@ void Cache::readFromCache(unsigned address) {
     if (!L1.read(address)) {
         L1.stats.numOfMiss++;
         L2.stats.numOfAcc++;
+        L1.bringFromLower(address, oldBlock); // fetch
+        if (oldBlock->DirtyBit && oldBlock->validBit) //TODO: added validBit check (might not matter)
+        {
+            L2.write(oldBlock->address); // TODO: changed address to oldBlock->address
+        }
         //try to read from L2
         if (!L2.read(address)) {
             L2.stats.numOfMiss++;
@@ -339,11 +319,6 @@ void Cache::readFromCache(unsigned address) {
             if (oldBlock->validBit)
                 Snoop(oldBlock);
         }
-
-        L1.bringFromLower(address, oldBlock); // fetch
-        if (oldBlock->DirtyBit)
-            L2.write(address);
-
     }
 }
 
@@ -356,18 +331,27 @@ void Cache::writeToCache(unsigned int address) {
         L1.stats.numOfAcc++;
         if (L1.read(address)) {
             L1.write(address);
-        } else {
+        }
+        else
+        {
             L1.stats.numOfMiss++;
             L2.stats.numOfAcc++;
             //search L2
-            if (!L2.read(address)) {
+            if (!L2.read(address))
+            {
                 L2.stats.numOfMiss++;
                 L2.bringFromLower(address, oldBlock);
-                Snoop(oldBlock);
+                if (oldBlock->validBit) //TODO: added valid bit check (might not matter)
+                {
+                    Snoop(oldBlock);
+                }
             }
 
             L1.bringFromLower(address, oldBlock);
-            if (oldBlock->DirtyBit) L2.write(address);
+            if (oldBlock->DirtyBit && oldBlock->validBit) // TODO: added validBit check (might not matter)
+            {
+                L2.write(oldBlock->address); // TODO: changed address to oldBlock->address
+            }
             L1.write(address);
         }
     } else {
@@ -385,10 +369,12 @@ void Cache::writeToCache(unsigned int address) {
     }
 }
 
+
 void Cache::Snoop(Entry *oldBlock) {
     //block is evicted from L2 but still in L1
-    if (L1.searchInCache(oldBlock->address) != -1) {
+    if (L1.searchInCache(oldBlock->address) != -1) { //TODO: what if line is dirty? (might not matter)
         L1.Evict(oldBlock->address);
+       // L2.write(oldBlock->address);
     }
 
 }
@@ -420,6 +406,7 @@ int Cache_init(unsigned MemCyc, unsigned BSize, unsigned L1Size, unsigned L2Size
     cache.Cache_initiate(MemCyc, BSize, L1Size, L2Size, L1Cyc, L2Cyc, L1Assoc, L2Assoc, WrAlloc);
 
 }
+
 
 
 void Cache_Access(char operation, unsigned address) {
