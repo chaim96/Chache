@@ -183,7 +183,7 @@ int CacheTable::searchInCache(unsigned address, bool is_update) {
  * the algorithm is based on Lecture's notes.
  */
 void CacheTable::CountUpdate(unsigned way, unsigned set) {
-    unsigned x = Counter[way*numSets + set]; //TODO: added *numSets
+    unsigned x = Counter[way*numSets + set];
     Counter[way*numSets + set] = Ways - 1;
     for (unsigned i = 0; i < Ways; ++i) {
         if (i != way && Counter[i*numSets + set] > x) Counter[i*numSets + set]--;
@@ -207,7 +207,7 @@ unsigned CacheTable::LRUfindMin(unsigned address, unsigned *victimWay) {
     return minEntry;
 }
 
-// TODO: go over with Shai
+
 void CacheTable::bringFromLower(unsigned address, Entry *oldBlock) {
     unsigned tag = calcTag(address);
     unsigned set = calcSet(address);
@@ -218,7 +218,7 @@ void CacheTable::bringFromLower(unsigned address, Entry *oldBlock) {
 
     //try to find empty entry
     for (unsigned i = 0; i < Ways; i++) {
-        if (Entries[index]->validBit == 0) { //TODO: Tag[index] == tag && (was part of if)
+        if (Entries[index]->validBit == 0) {
             is_empty = true;
             entryWay = i;
             break;
@@ -346,9 +346,9 @@ void Cache::readFromCache(unsigned address) {
         oldBlock->validBit=0;
 
         L1.bringFromLower(address, oldBlock); // fetch
-        if (oldBlock->DirtyBit && oldBlock->validBit) //TODO: added validBit check (might not matter)
+        if (oldBlock->DirtyBit && oldBlock->validBit)
         {
-            L2.write(oldBlock->address, true); // TODO: changed address to oldBlock->address
+            L2.write(oldBlock->address, true);
         }
 
     }
@@ -375,7 +375,7 @@ void Cache::writeToCache(unsigned int address) {
             {
                 L2.stats.numOfMiss++;
                 L2.bringFromLower(address, oldBlock);
-                if (oldBlock->validBit) //TODO: added valid bit check (might not matter)
+                if (oldBlock->validBit)
                 {
                     Snoop(oldBlock);
                 }
