@@ -59,9 +59,7 @@ class CacheTable {
     vector<unsigned> Tag;
     vector<unsigned> Counter;
 
-    unsigned calcSet(unsigned address);
 
-    unsigned calcTag(unsigned address);
 
 
 public:
@@ -87,23 +85,29 @@ public:
             }
         }
 
-
         //initiate stats
         stats.numOfMiss = 0;
         stats.accTime = Cycles;
         stats.numOfAcc = 0;
     }
 
+    ~CacheTable() = default;
 
-    int searchInCache(unsigned address);
+    void erase();
+
+    unsigned calcSet(unsigned address);
+
+    unsigned calcTag(unsigned address);
+
+    int searchInCache(unsigned address, bool is_update);
 
     void CountUpdate(unsigned way, unsigned set);
 
     unsigned LRUfindMin(unsigned address, unsigned *victimTag);
 
-    bool read(unsigned address);
+    bool read(unsigned address, bool is_update);
 
-    bool write(unsigned address);
+    bool write(unsigned address, bool is_update);
 
     void bringFromLower(unsigned address, Entry *oldBlock);
 
@@ -116,8 +120,18 @@ public:
  **********************************************/
 
 
-bool CacheTable::read(unsigned address) {
-    unsigned index = searchInCache(address);
+void CacheTable::erase(){
+    if (!Entries.empty()){
+        for (Entry * entry : Entries) {
+            delete entry;
+        }
+    }
+}
+
+
+
+bool CacheTable::read(unsigned address, bool is_update) {
+    int index = searchInCache(address, is_update);
     if (index != -1) {
         return true;
     }
@@ -125,8 +139,8 @@ bool CacheTable::read(unsigned address) {
 }
 
 
-bool CacheTable::write(unsigned address) {
-    unsigned index = searchInCache(address);
+bool CacheTable::write(unsigned address, bool is_update) {
+    int index = searchInCache(address, is_update);
     if (index != -1) {
         Entries[index]->DirtyBit = 1;
         return true;
@@ -148,13 +162,15 @@ unsigned CacheTable::calcTag(unsigned address) {
 }
 
 
-int CacheTable::searchInCache(unsigned address) {
+int CacheTable::searchInCache(unsigned address, bool is_update) {
     unsigned tag = calcTag(address);
     unsigned set = calcSet(address);
     unsigned index = set;
     for (unsigned i = 0; i < Ways; i++) {
         if ((Tag[index] == tag) && Entries[index]->validBit == 1) {
-            CountUpdate(i, set);
+            if(is_update) {
+                CountUpdate(i, set);
+            }
             return index;
         }
         index += numSets;
@@ -222,15 +238,16 @@ void CacheTable::bringFromLower(unsigned address, Entry *oldBlock) {
 
     //update to new entry
     CountUpdate(entryWay, set);
+
     Entries[index]->validBit = 1;
     Entries[index]->address = address;
-    Entries[index]->DirtyBit = false;
+    Entries[index]->DirtyBit = 0;
     Tag[index] = tag;
 }
 
 
 void CacheTable::Evict(unsigned address) {
-    int index = searchInCache(address);
+    int index = searchInCache(address, false);
     if (index != -1) {
         Entries[index]->validBit = 0;
     }
@@ -259,7 +276,10 @@ public:
 
     Cache(Cache const &) = delete; // disable copy ctor
     void operator=(Cache const &) = delete; // disable = operator
+
     ~Cache() = default;
+
+    void erase();
 
     static Cache &getInstance() // make singleton
     {
@@ -299,45 +319,59 @@ Cache::Cache_initiate(unsigned MemCyc, unsigned BSize, unsigned L1Size, unsigned
     this->L2 = CacheTable(this->BSize, num_blocks2, L2Assoc, L2Cyc, Allocate);
 };
 
+void Cache::erase(){
+    L1.erase();
+    L2.erase();
+}
+
 
 void Cache::readFromCache(unsigned address) {
     Entry *oldBlock = new Entry();
+
     //try to read from L1
     L1.stats.numOfAcc++;
-    if (!L1.read(address)) {
+    if (!L1.read(address, true)) {
         L1.stats.numOfMiss++;
         L2.stats.numOfAcc++;
-        L1.bringFromLower(address, oldBlock); // fetch
-        if (oldBlock->DirtyBit && oldBlock->validBit) //TODO: added validBit check (might not matter)
-        {
-            L2.write(oldBlock->address); // TODO: changed address to oldBlock->address
-        }
+
         //try to read from L2
-        if (!L2.read(address)) {
+        if (!L2.read(address, true)) {
             L2.stats.numOfMiss++;
             L2.bringFromLower(address, oldBlock);
             if (oldBlock->validBit)
                 Snoop(oldBlock);
         }
+        oldBlock->address=0;
+        oldBlock->DirtyBit=0;
+        oldBlock->validBit=0;
+
+        L1.bringFromLower(address, oldBlock); // fetch
+        if (oldBlock->DirtyBit && oldBlock->validBit) //TODO: added validBit check (might not matter)
+        {
+            L2.write(oldBlock->address, true); // TODO: changed address to oldBlock->address
+        }
+
     }
+    delete oldBlock;
+
 }
 
 
 void Cache::writeToCache(unsigned int address) {
     Entry *oldBlock = new Entry();
-
     if (Allocate == WRITE_ALLOCATE) {
         //search in L1
         L1.stats.numOfAcc++;
-        if (L1.read(address)) {
-            L1.write(address);
+        if (L1.read(address, false)) {
+            L1.write(address, true);
         }
         else
         {
             L1.stats.numOfMiss++;
             L2.stats.numOfAcc++;
+
             //search L2
-            if (!L2.read(address))
+            if (!L2.read(address, true))
             {
                 L2.stats.numOfMiss++;
                 L2.bringFromLower(address, oldBlock);
@@ -347,36 +381,43 @@ void Cache::writeToCache(unsigned int address) {
                 }
             }
 
+            oldBlock->address=0;
+            oldBlock->DirtyBit=0;
+            oldBlock->validBit=0;
+            //free block X from L1 and write X to L2 if dirty
             L1.bringFromLower(address, oldBlock);
-            if (oldBlock->DirtyBit && oldBlock->validBit) // TODO: added validBit check (might not matter)
+            if (oldBlock->DirtyBit && oldBlock->validBit)
             {
-                L2.write(oldBlock->address); // TODO: changed address to oldBlock->address
+                L2.write(oldBlock->address, true);
             }
-            L1.write(address);
+
+            L1.write(address, true);
+
         }
     } else {
         L1.stats.numOfAcc++;
-        if (L1.read(address)) {
-            L1.write(address);
+        if (L1.read(address, false)) {
+            L1.write(address, true);
         } else {
             L1.stats.numOfMiss++;
             L2.stats.numOfAcc++;
-            if (L2.read(address))
-                L2.write(address);
+            if (L2.read(address, false))
+                L2.write(address, true);
             else
                 L2.stats.numOfMiss++;
         }
     }
+
+    delete oldBlock;
 }
 
 
 void Cache::Snoop(Entry *oldBlock) {
     //block is evicted from L2 but still in L1
-    if (L1.searchInCache(oldBlock->address) != -1) { //TODO: what if line is dirty? (might not matter)
+    if (L1.searchInCache(oldBlock->address,false) !=-1) {
         L1.Evict(oldBlock->address);
        // L2.write(oldBlock->address);
     }
-
 }
 void Cache::CacheGetStats(Stat * statsL1, Stat *statsL2, Stat *statsMem){
     //L1
@@ -404,7 +445,7 @@ int Cache_init(unsigned MemCyc, unsigned BSize, unsigned L1Size, unsigned L2Size
     Cache &cache = Cache::getInstance();
     if (&cache == 0) return -1;
     cache.Cache_initiate(MemCyc, BSize, L1Size, L2Size, L1Cyc, L2Cyc, L1Assoc, L2Assoc, WrAlloc);
-
+    return 1;
 }
 
 
@@ -434,4 +475,7 @@ void Cache_GetStats(double *L1MissRate, double *L2MissRate, double *avgAccTime) 
     *avgAccTime = (statsL1.accTime * statsL1.numOfAcc +
                    statsL2.accTime * statsL2.numOfAcc +
                    memory.accTime * memory.numOfAcc) / (statsL1.numOfAcc);
+
+    cache.erase();
+
 }
